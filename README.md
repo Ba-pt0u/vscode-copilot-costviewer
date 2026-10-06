@@ -40,11 +40,12 @@ Pour déboguer : ouvrir le dossier dans VS Code puis `F5` (Extension Development
 
 ### Publier une version
 
-Mettre à jour `version` dans `package.json` et le `CHANGELOG.md`, puis pousser un tag : le workflow GitHub Actions compile l'extension et crée la release avec le `.vsix`.
+Mettre à jour `version` dans `package.json` et le `CHANGELOG.md`, puis au choix :
 
-```bash
-git tag v0.5.2 && git push origin v0.5.2
-```
+- onglet **Actions › Release › Run workflow** : le tag `v<version>` et la release sont créés ;
+- ou pousser un tag : `git tag v0.5.2 && git push origin v0.5.2`.
+
+Le workflow compile l'extension et joint le `.vsix` à la release.
 
 ## Commandes
 

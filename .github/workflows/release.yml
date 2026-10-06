@@ -1,8 +1,12 @@
 name: Release
 
+# Publie une release GitHub avec le .vsix :
+# - automatiquement quand un tag v* est poussé ;
+# - ou à la main (onglet Actions > Release > Run workflow) : le tag v<version de package.json> est créé.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -18,11 +22,17 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run compile
-      - run: npx vsce package --out copilot-costs-${GITHUB_REF_NAME#v}.vsix
+      - name: Version
+        id: v
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then TAG="$GITHUB_REF_NAME"; else TAG="v$(node -p "require('./package.json').version")"; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      - run: npx vsce package --out "copilot-costs-${{ steps.v.outputs.tag }}.vsix"
       - name: Publier la release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" copilot-costs-*.vsix \
-            --title "$GITHUB_REF_NAME" \
+          gh release create "${{ steps.v.outputs.tag }}" copilot-costs-*.vsix \
+            --target "$GITHUB_SHA" \
+            --title "${{ steps.v.outputs.tag }}" \
             --notes-file .github/release-notes.md
