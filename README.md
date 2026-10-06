@@ -38,6 +38,14 @@ npm run package   # produit copilot-costs-<version>.vsix
 
 Pour déboguer : ouvrir le dossier dans VS Code puis `F5` (Extension Development Host).
 
+### Publier une version
+
+Mettre à jour `version` dans `package.json` et le `CHANGELOG.md`, puis pousser un tag : le workflow GitHub Actions compile l'extension et crée la release avec le `.vsix`.
+
+```bash
+git tag v0.5.2 && git push origin v0.5.2
+```
+
 ## Commandes
 
 Toutes sont dans la palette (`Ctrl+Maj+P`, préfixe **Copilot Coûts**) et dans le menu de la barre d'état.
