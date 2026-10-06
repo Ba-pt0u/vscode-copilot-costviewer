@@ -1,0 +1,311 @@
+{
+  "name": "copilot-costs",
+  "displayName": "Copilot Cost Viewer",
+  "description": "Suivi des tokens, crédits IA et coûts GitHub Copilot Chat par projet, dossier et tâche, dans un CSV prêt pour Excel.",
+  "version": "0.5.1",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "copilotCosts.tagSession",
+        "title": "Taguer une conversation (tâche / projet)",
+        "category": "Copilot Coûts"
+      },
+      {
+        "command": "copilotCosts.flushNow",
+        "title": "Enregistrer les coûts maintenant",
+        "category": "Copilot Coûts"
+      },
+      {
+        "command": "copilotCosts.openReport",
+        "title": "Ouvrir le fichier de coûts",
+        "category": "Copilot Coûts"
+      },
+      {
+        "command": "copilotCosts.rebuild",
+        "title": "Tout recalculer (maille, prix, historique)",
+        "category": "Copilot Coûts"
+      },
+      {
+        "command": "copilotCosts.importPrices",
+        "title": "Afficher les tarifs des modèles",
+        "category": "Copilot Coûts"
+      },
+      {
+        "command": "copilotCosts.reconcile",
+        "title": "Rapprochement avec la facture GitHub",
+        "category": "Copilot Coûts"
+      },
+      {
+        "command": "copilotCosts.diagnostics",
+        "title": "Diagnostic (sessions détectées)",
+        "category": "Copilot Coûts"
+      },
+      {
+        "command": "copilotCosts.menu",
+        "title": "Menu",
+        "category": "Copilot Coûts"
+      }
+    ],
+    "configuration": {
+      "title": "Copilot Coûts",
+      "properties": {
+        "copilotCosts.granularity": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "folder"
+          ],
+          "enumDescriptions": [
+            "Un fichier de coûts à la racine du workspace.",
+            "Un fichier de coûts par dossier projet (détecté depuis les fichiers touchés par la conversation, ou choisi avec la commande de tag)."
+          ],
+          "default": "workspace",
+          "description": "Maille par défaut du suivi des coûts. S'applique aux nouvelles conversations ; une conversation déjà enregistrée reste dans son fichier sauf si vous la retaguez."
+        },
+        "copilotCosts.folderDepth": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Mode dossier : profondeur du dossier projet sous la racine du workspace (1 = sous-dossiers directs, 0 = racine de chaque dossier d'un workspace multi-racines)."
+        },
+        "copilotCosts.excludedFolders": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            ".git",
+            ".github",
+            ".vscode",
+            "node_modules"
+          ],
+          "description": "Mode dossier : dossiers jamais considérés comme projets."
+        },
+        "copilotCosts.waitForFolderMinutes": {
+          "type": "number",
+          "default": 15,
+          "description": "Mode dossier : si aucun dossier n'est encore détectable pour une conversation récente, attendre ce délai d'inactivité avant de la rattacher à la racine du workspace."
+        },
+        "copilotCosts.fileName": {
+          "type": "string",
+          "default": "copilot-costs.csv",
+          "description": "Nom (ou chemin relatif) du fichier de coûts dans le dossier projet / workspace."
+        },
+        "copilotCosts.flushIntervalMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "description": "Fréquence d'écriture dans le fichier de coûts (minutes)."
+        },
+        "copilotCosts.csvDelimiter": {
+          "type": "string",
+          "enum": [
+            ";",
+            ",",
+            "\t"
+          ],
+          "default": ";",
+          "description": "Séparateur CSV. « ; » pour Excel en français. Un fichier existant garde son séparateur."
+        },
+        "copilotCosts.decimalSeparator": {
+          "type": "string",
+          "enum": [
+            ",",
+            "."
+          ],
+          "default": ",",
+          "description": "Séparateur décimal des montants (« , » pour Excel en français)."
+        },
+        "copilotCosts.currency": {
+          "type": "string",
+          "default": "USD",
+          "description": "Devise des prix configurés (inscrite dans le fichier)."
+        },
+        "copilotCosts.creditPrice": {
+          "type": "number",
+          "default": 0.01,
+          "description": "Valeur d'un crédit IA Copilot dans la devise (0,01 USD par défaut). Coût tokens = crédits × cette valeur."
+        },
+        "copilotCosts.costBasis": {
+          "type": "string",
+          "enum": [
+            "tokens",
+            "premiumRequests"
+          ],
+          "default": "tokens",
+          "description": "Base de la colonne « Coût » et de la barre d'état. Les deux colonnes de coût sont toujours écrites.",
+          "enumDescriptions": [
+            "Crédits IA (facturation à l'usage) : crédits journalisés par Copilot, sinon tokens × tarif du modèle, × valeur du crédit.",
+            "Ancienne facturation par requêtes premium : multiplicateur × prix unitaire."
+          ]
+        },
+        "copilotCosts.priceSource": {
+          "type": "string",
+          "enum": [
+            "vscode",
+            "settings"
+          ],
+          "enumDescriptions": [
+            "Tarifs lus en direct dans VS Code (Language Models) ; le réglage modelPrices sert pour les modèles sans tarif.",
+            "Uniquement le réglage modelPrices (pour forcer des tarifs négociés)."
+          ],
+          "default": "vscode",
+          "description": "Source des tarifs des modèles."
+        },
+        "copilotCosts.modelPrices": {
+          "type": "object",
+          "default": {
+            "*": {
+              "input": 200,
+              "output": 1000,
+              "cached": 20
+            },
+            "claude-opus-4.8": {
+              "input": 500,
+              "output": 2500,
+              "cached": 50,
+              "cacheWrite": 625
+            },
+            "claude-opus-5.5": {
+              "input": 400,
+              "output": 2000,
+              "cached": 20,
+              "cacheWrite": 500
+            },
+            "claude-sonnet-5.5": {
+              "input": 200,
+              "output": 1000,
+              "cached": 20,
+              "cacheWrite": 250
+            },
+            "claude-sonnet-5": {
+              "input": 200,
+              "output": 1000,
+              "cached": 20,
+              "cacheWrite": 250
+            },
+            "gpt-5.3-codex": {
+              "input": 175,
+              "output": 1400,
+              "cached": 17.5
+            },
+            "gpt-5.4-mini": {
+              "input": 75,
+              "output": 450,
+              "cached": 7.5
+            },
+            "gpt-5.4": {
+              "input": 250,
+              "output": 1500,
+              "cached": 25,
+              "longInput": 500,
+              "longOutput": 2250,
+              "longCached": 50
+            },
+            "gpt-5.5": {
+              "input": 500,
+              "output": 3000,
+              "cached": 50,
+              "longInput": 1000,
+              "longOutput": 4500,
+              "longCached": 100
+            },
+            "gpt-5-mini": {
+              "input": 25,
+              "output": 200,
+              "cached": 2.5
+            },
+            "claude-haiku-4.5": {
+              "input": 100,
+              "output": 500,
+              "cached": 10,
+              "cacheWrite": 125
+            }
+          },
+          "description": "Tarifs de secours (ou forcés si priceSource = settings) en crédits IA par million de tokens : input, output, cached (lecture de cache), cacheWrite, longInput/longOutput/longCached. La clé la plus longue contenue dans le nom du modèle l'emporte ; « * » sert par défaut."
+        },
+        "copilotCosts.longContextThreshold": {
+          "type": "number",
+          "default": 272000,
+          "description": "Au-delà de ce nombre de tokens d'entrée, les tarifs « long context » du modèle s'appliquent (si le modèle en a)."
+        },
+        "copilotCosts.premiumRequestPrice": {
+          "type": "number",
+          "default": 0.04,
+          "description": "Prix unitaire d'une requête premium (avant multiplicateur du modèle)."
+        },
+        "copilotCosts.modelMultipliers": {
+          "type": "object",
+          "default": {},
+          "description": "Multiplicateurs de requêtes premium par modèle, utilisés seulement si Copilot ne l'indique pas dans la conversation (ex. { \"claude-opus\": 10 })."
+        },
+        "copilotCosts.defaultTask": {
+          "type": "string",
+          "default": "non-tagué",
+          "description": "Tâche inscrite pour une conversation sans tag."
+        },
+        "copilotCosts.charsPerToken": {
+          "type": "number",
+          "default": 4,
+          "description": "Ratio caractères/token pour estimer les tokens quand Copilot ne les journalise pas."
+        },
+        "copilotCosts.includeConversationTitle": {
+          "type": "boolean",
+          "default": true,
+          "description": "Inscrire le début du premier message de la conversation dans le fichier (désactivez si le fichier est versionné/partagé)."
+        },
+        "copilotCosts.importHistory": {
+          "type": "boolean",
+          "default": true,
+          "description": "Importer aussi les conversations antérieures à l'installation de l'extension."
+        },
+        "copilotCosts.chatSessionsPath": {
+          "type": "string",
+          "default": "",
+          "description": "Avancé : chemin forcé du dossier des sessions de chat (vide = détection automatique)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.0.0",
+    "typescript": "^5.4.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ba-pt0u/vscode-copilot-costviewer.git"
+  },
+  "homepage": "https://github.com/Ba-pt0u/vscode-copilot-costviewer#readme",
+  "bugs": {
+    "url": "https://github.com/Ba-pt0u/vscode-copilot-costviewer/issues"
+  },
+  "keywords": [
+    "copilot",
+    "github copilot",
+    "cost",
+    "tokens",
+    "ai credits",
+    "finops",
+    "billing",
+    "csv"
+  ]
+}
